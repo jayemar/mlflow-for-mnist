@@ -11,6 +11,7 @@ from pathlib import Path
 import pickle
 import sklearn
 import tensorflow as tf
+from tensorflow.keras.callbacks import LambdaCallback
 from tensorflow.keras.layers import Dense, Input
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import SGD
@@ -36,22 +37,33 @@ y_train = np.eye(num_labels)[y_train].astype('int16')
 y_test = np.eye(num_labels)[y_test].astype('int16')
 
 
-def main():
-    inputs = Input(shape=(image_pixels,))
-    # hidden = Dense(int(image_pixels * 0.37), activation='relu')(inputs)
-    outputs = Dense(num_labels, activation='softmax')(inputs)
-    model = Model(inputs=inputs, outputs=outputs)
+def track_loss_acc(logs, log_step=100):
+    batch = logs.get('batch')
+    if batch % log_step == 0:
+        mlflow.log_metric('training_loss', logs.get('loss'))
+        mlflow.log_metric('training_acc', logs.get('acc'))
 
-    sgd = SGD(lr=learning_rate)
-    model.compile(optimizer=sgd, loss=loss_func, metrics=metrics)
+batch_callback = LambdaCallback(on_batch_end=lambda batch, logs: track_loss_acc(logs))
+epoch_callback = LambdaCallback(on_epoch_end=lambda epoch, logs: print("Epoch Complete"))
+complete_callback = LambdaCallback(on_train_end=lambda logs: print(logs))
 
-    fit_resp = model.fit(x_train, y_train)
-    mlflow.log_metric('training_loss', fit_resp.history.get('loss')[0])
-    mlflow.log_metric('training_acc', fit_resp.history.get('acc')[0])
 
-    loss, acc = model.evaluate(x_test, y_test)
-    mlflow.log_metric('loss', loss)
-    mlflow.log_metric('acc', acc)
+# def main():
+inputs = Input(shape=(image_pixels,))
+# hidden = Dense(int(image_pixels * 0.37), activation='relu')(inputs)
+outputs = Dense(num_labels, activation='softmax')(inputs)
+model = Model(inputs=inputs, outputs=outputs)
 
-if __name__ == '__main__':
-    main()
+sgd = SGD(lr=learning_rate)
+model.compile(optimizer=sgd, loss=loss_func, metrics=metrics)
+
+fit_resp = model.fit(x=x_train, y=y_train, callbacks=[batch_callback])
+mlflow.log_metric('training_loss', fit_resp.history.get('loss')[0])
+mlflow.log_metric('training_acc', fit_resp.history.get('acc')[0])
+
+loss, acc = model.evaluate(x_test, y_test)
+mlflow.log_metric('loss', loss)
+mlflow.log_metric('acc', acc)
+
+# if __name__ == '__main__':
+#     main()
